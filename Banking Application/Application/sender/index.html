@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sender</title>
+    <style>
+        /* Styling the page */
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f7f7f7;
+            margin: 0;
+            padding: 0;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-top: 20px;
+        }
+
+        .container {
+            max-width: 400px;
+            margin: 50px auto;
+            background: white;
+            padding: 20px;
+            box-shadow: 0px 4px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 10px;
+        }
+
+        label {
+            font-size: 16px;
+            font-weight: bold;
+            color: #555;
+            margin-top: 10px;
+        }
+
+        input[type="text"], input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0 20px 0;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+
+        button:hover {
+            background-color: #218838;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        #connection-status {
+            text-align: center;
+            margin-top: 20px;
+            color: green;
+            font-weight: bold;
+        }
+
+        #balance-warning {
+            color: red;
+            font-weight: bold;
+            margin-top: 10px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Money Transfer</h1>
+    
+    <div class="container">
+        <!-- Email input for sender -->
+        <label for="email">Your Email:</label>
+        <input type="text" id="email" placeholder="Enter your email" required>
+        <button id="connectBtn">Connect</button>
+        <div id="connection-status"></div>
+        
+        <!-- Transfer form (Initially hidden) -->
+        <div id="transferForm" class="hidden">
+            <!-- Recipient and Amount input fields -->
+            <label for="recipient_email">Recipient Email:</label>
+            <input type="text" id="recipient_email" placeholder="Enter recipient email" required>
+            
+            <label for="amount">Amount:</label>
+            <input type="number" id="amount" placeholder="Enter amount" required>
+            <div id="balance-warning">Amount exceeds your balance!</div>
+
+            <button id="sendBtn">Send Money</button>
+        </div>
+    </div>
+
+    <script>
+        let socket;
+        let email;
+        let senderBalance = 0; // Initial balance
+    
+        // Connect button event to establish WebSocket connection
+        document.getElementById('connectBtn').addEventListener('click', function() {
+            email = document.getElementById('email').value;
+            if (!email) {
+                alert("Please enter your email.");
+                return;
+            }
+    
+            // Open WebSocket connection and attach the email as a query parameter
+            socket = new WebSocket(`wss://yourwebsocketurl?email_id=${email}`);
+    
+            // Handle successful connection
+            socket.onopen = function() {
+                console.log('WebSocket connection established');
+                // Show connection success message and reveal transfer form
+                document.getElementById('connection-status').innerText = "Connected Successfully!";
+                document.getElementById('transferForm').classList.remove('hidden');
+            };
+    
+            // Handle receiving messages from the server
+            socket.onmessage = function(event) {
+                console.log('Message received from server:', event.data);
+                const serverResponse = JSON.parse(event.data);
+    
+                // If the message is related to balance check, update senderBalance
+                if (serverResponse.status === 'success' && serverResponse.new_balance) {
+                    senderBalance = parseFloat(serverResponse.new_balance); // Convert string to float
+                    console.log("Sender's Balance:", senderBalance);
+                }
+    
+                if (serverResponse.message) {
+                    alert(serverResponse.message);  // Show the server response in an alert
+                }
+            };
+    
+            // Handle connection errors
+            socket.onerror = function(error) {
+                console.error('WebSocket error:', error);
+            };
+    
+            // Handle connection closure
+            socket.onclose = function() {
+                console.log('WebSocket connection closed');
+                document.getElementById('connection-status').innerText = "Disconnected";
+                document.getElementById('transferForm').classList.add('hidden');
+            };
+        });
+    
+        // Trigger balance check when amount input field is clicked
+        document.getElementById('amount').addEventListener('click', function() {
+            // Ensure WebSocket is open
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                // Request balance from the server using the sender's email
+                socket.send(JSON.stringify({
+                    action: 'balanceroute',
+                    sender_email: email
+                }));
+            }
+        });
+    
+        // Check amount against balance in real-time
+        document.getElementById('amount').addEventListener('input', function() {
+            const amount = parseFloat(this.value);  // Get the entered amount as a number
+            if (isNaN(amount)) {
+                return; // Do nothing if input is not a valid number
+            }
+    
+            // Compare entered amount with the sender's balance
+            if (amount > senderBalance) {
+                document.getElementById('balance-warning').style.display = 'block';  // Show warning
+            } else {
+                document.getElementById('balance-warning').style.display = 'none';  // Hide warning
+            }
+        });
+    
+        // Send money button event to send a message via WebSocket
+        document.getElementById('sendBtn').addEventListener('click', function() {
+            const recipientEmail = document.getElementById('recipient_email').value;
+            const amount = parseFloat(document.getElementById('amount').value);  // Ensure amount is a number
+    
+            if (!recipientEmail || !amount) {
+                alert('Please enter recipient email and amount.');
+                return;
+            }
+    
+            // Compare entered amount with sender's balance
+            if (amount > senderBalance) {
+                document.getElementById('balance-warning').style.display = 'block';  // Show warning
+            } else {
+                document.getElementById('balance-warning').style.display = 'none';  // Hide warning
+    
+                // Ensure WebSocket is open before sending the message
+                if (socket && socket.readyState === WebSocket.OPEN) {
+                    // Send the money transfer message
+                    socket.send(JSON.stringify({
+                        action: 'sendmoney',
+                        sender_email: email,  // Sender email from connection
+                        recipient_email: recipientEmail,  // Recipient email input
+                        amount: amount  // Entered amount
+                    }));
+                    
+                    // Reset the transfer form after sending money
+                    document.getElementById('recipient_email').value = '';
+                    document.getElementById('amount').value = '';
+                } else {
+                    alert('WebSocket connection is not open. Please connect first.');
+                }
+            }
+        });
+    </script>
+    
+</body>
+</html>

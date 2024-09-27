@@ -1,0 +1,6 @@
+{
+    "action": "sendmoney",
+    "sender_email": "satyam@gmail.com",
+    "recipient_email": "ritik@gmail.com",
+    "amount": 400
+}
